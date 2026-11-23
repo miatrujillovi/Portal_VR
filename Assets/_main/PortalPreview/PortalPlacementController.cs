@@ -6,22 +6,33 @@ using UnityEngine;
 public class PortalPlacementController : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private RayInteractor _rightRayInteractor;
-    [SerializeField] private GameObject _portalPrefab;
+    [SerializeField] private RayInteractor rightRayInteractor;
+    [SerializeField] private RayInteractor leftRayInteractor;
+    [SerializeField] private GameObject portalPreviewPrefab;
+    [SerializeField] private GameObject rightPortalPrefab;
+    [SerializeField] private GameObject leftPortalPrefab;
+
+    public bool rightIsLeft = false;
 
     [Header("Portal Settings")]
-    [SerializeField] private Vector2 _wallSize = new(0.9f, 1.4f);
-    [SerializeField] private Vector2 _floorSize = new(0.9f, 0.9f);
-    [SerializeField] private float _maxDistance = 8f;
-    [SerializeField] private float _surfaceOffset = 0.02f;
-    [SerializeField] private float _edgeMargin = 0.03f;
+    [SerializeField] private Vector2 wallSize = new(0.9f, 1.4f);
+    [SerializeField] private Vector2 floorSize = new(0.9f, 0.9f);
+    [SerializeField] private float maxDistance = 8f;
+    [SerializeField] private float surfaceOffset = 0.02f;
+    [SerializeField] private float edgeMargin = 0.03f;
 
-    private GameObject _previewInstance;
-    private GameObject _portalInstance;
+    private GameObject previewInstance;
+    private GameObject rightPortalInstance;
+    private GameObject leftPortalInstance;
+
+    enum PortalType
+    {
+        Right, Left
+    }
 
     private void Update()
     {
-        if (_rightRayInteractor == null || _portalPrefab == null)
+        if (rightRayInteractor == null || portalPreviewPrefab == null)
         {
             return;
         }
@@ -40,7 +51,7 @@ public class PortalPlacementController : MonoBehaviour
             return;
         }
 
-        Ray ray = _rightRayInteractor.Ray;
+        Ray ray = rightRayInteractor.Ray;
 
         if (!TryFindSurface(room, ray, out MRUKAnchor anchor,
                 out RaycastHit hit, out bool isWall))
@@ -49,7 +60,7 @@ public class PortalPlacementController : MonoBehaviour
             return;
         }
 
-        Vector2 portalSize = isWall ? _wallSize : _floorSize;
+        Vector2 portalSize = isWall ? wallSize : floorSize;
 
         if (!CanPlacePortal(anchor, hit.point, portalSize))
         {
@@ -69,16 +80,25 @@ public class PortalPlacementController : MonoBehaviour
                 180f, anchor.transform.up) * rotation;
         }
 
-        Vector3 position = hit.point + normal * _surfaceOffset;
+        Vector3 position = hit.point + normal * surfaceOffset;
 
         UpdatePreview(position, rotation, portalSize);
 
-        if (OVRInput.GetDown(
-                OVRInput.Button.PrimaryIndexTrigger,
-                OVRInput.Controller.RTouch))
+        if (OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch))
         {
-            PlacePortal(position, rotation, portalSize);
-        }
+            if (rightIsLeft)
+            {
+                PlacePortal(position, rotation, portalSize, PortalType.Left);
+            }
+            else
+            {
+                PlacePortal(position, rotation, portalSize, PortalType.Right);
+            }
+        } 
+        /*else if (OVRInput.GetDown(OVRInput.Button.SecondaryIndexTrigger, OVRInput.Controller.LTouch))
+        {
+            PlacePortal(position, rotation, portalSize, PortalType.Left);
+        }*/
     }
 
     private bool TryFindSurface(
@@ -92,7 +112,7 @@ public class PortalPlacementController : MonoBehaviour
         selectedHit = default;
         isWall = false;
 
-        float closestDistance = _maxDistance;
+        float closestDistance = maxDistance;
 
         foreach (MRUKAnchor wall in room.WallAnchors)
         {
@@ -141,8 +161,8 @@ public class PortalPlacementController : MonoBehaviour
         Rect rect = anchor.PlaneRect.Value;
         Vector3 local = anchor.transform.InverseTransformPoint(worldPoint);
 
-        float halfWidth = size.x * 0.5f + _edgeMargin;
-        float halfHeight = size.y * 0.5f + _edgeMargin;
+        float halfWidth = size.x * 0.5f + edgeMargin;
+        float halfHeight = size.y * 0.5f + edgeMargin;
 
         Vector2[] corners =
         {
@@ -173,39 +193,59 @@ public class PortalPlacementController : MonoBehaviour
     private void UpdatePreview(
         Vector3 position, Quaternion rotation, Vector2 size)
     {
-        if (_previewInstance == null)
+        if (previewInstance == null)
         {
-            _previewInstance = Instantiate(_portalPrefab);
-            _previewInstance.name = "PortalPreview";
+            previewInstance = Instantiate(portalPreviewPrefab);
+            previewInstance.name = "PortalPreview";
         }
 
-        _previewInstance.SetActive(true);
+        previewInstance.SetActive(true);
 
-        ApplyTransform(_previewInstance, position, rotation, size);
+        ApplyTransform(previewInstance, position, rotation, size);
     }
 
     private void HidePreview()
     {
-        if (_previewInstance != null)
+        if (previewInstance != null)
         {
-            _previewInstance.SetActive(false);
+            previewInstance.SetActive(false);
         }
     }
 
-    private void PlacePortal(
-        Vector3 position, Quaternion rotation, Vector2 size)
+    private void PlacePortal(Vector3 position, Quaternion rotation, Vector2 size, PortalType _portalType)
     {
-        if (_portalInstance != null)
+        if (_portalType == PortalType.Right)
         {
-            Destroy(_portalInstance);
+            if (rightPortalInstance != null)
+            {
+                Destroy(rightPortalInstance);
+            }
+
+            rightPortalInstance = Instantiate(rightPortalPrefab);
+            rightPortalInstance.name = "RightPlacedPortal";
+
+            ApplyTransform(rightPortalInstance, position, rotation, size);
+
+            rightPortalInstance.GetComponent<PortalTrigger>().SetOtherPortalPosition(leftPortalInstance);
+
+            Debug.Log($"Right Portal placed at {position}");
+        } 
+        else if (_portalType == PortalType.Left)
+        {
+            if (leftPortalInstance != null)
+            {
+                Destroy(leftPortalInstance);
+            }
+
+            leftPortalInstance = Instantiate(leftPortalPrefab);
+            leftPortalInstance.name = "LeftPlacedPortal";
+
+            ApplyTransform(leftPortalInstance, position, rotation, size);
+
+            leftPortalInstance.GetComponent<PortalTrigger>().SetOtherPortalPosition(rightPortalInstance);
+
+            Debug.Log($"Left Portal placed at {position}");
         }
-
-        _portalInstance = Instantiate(_portalPrefab);
-        _portalInstance.name = "PlacedPortal";
-
-        ApplyTransform(_portalInstance, position, rotation, size);
-
-        Debug.Log($"Portal placed at {position}");
     }
 
     private void ApplyTransform(
